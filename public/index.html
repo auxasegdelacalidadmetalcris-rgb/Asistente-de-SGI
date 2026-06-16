@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agente SGI — Metalcris</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; height: 100vh; display: flex; flex-direction: column; }
+
+  #header { background: #1a1a2e; color: white; padding: 12px 16px; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  #header h1 { font-size: 15px; font-weight: 500; }
+  #header p { font-size: 11px; opacity: 0.6; }
+  #header-icon { width: 34px; height: 34px; background: rgba(255,255,255,0.1); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+
+  #status-bar { background: white; border-bottom: 1px solid #e5e5e5; padding: 6px 16px; display: flex; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
+  .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; padding: 3px 9px; border-radius: 20px; border: 1px solid #e5e5e5; color: #666; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: #ccc; }
+  .dot.ok { background: #22c55e; }
+  .dot.err { background: #ef4444; }
+  .dot.warn { background: #f59e0b; }
+
+  #alerts-panel { background: #fff8f0; border-bottom: 1px solid #fde68a; padding: 10px 16px; display: none; flex-shrink: 0; }
+  #alerts-panel h3 { font-size: 12px; font-weight: 600; color: #92400e; margin-bottom: 6px; }
+  .alert-item { font-size: 12px; color: #78350f; padding: 3px 0; border-bottom: 1px solid #fde68a33; }
+  .alert-item.red { color: #991b1b; }
+
+  #messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .msg { max-width: 82%; padding: 10px 14px; border-radius: 12px; font-size: 13px; line-height: 1.55; }
+  .msg-user { align-self: flex-end; background: #1a1a2e; color: white; border-bottom-right-radius: 3px; }
+  .msg-agent { align-self: flex-start; background: white; color: #1a1a1a; border: 1px solid #e5e5e5; border-bottom-left-radius: 3px; }
+  .msg-agent.loading { color: #999; font-style: italic; }
+
+  #quick-btns { background: white; border-top: 1px solid #e5e5e5; padding: 8px 16px; display: flex; gap: 6px; overflow-x: auto; flex-shrink: 0; }
+  .qbtn { white-space: nowrap; font-size: 11px; padding: 5px 12px; border-radius: 20px; border: 1px solid #d1d5db; background: white; color: #374151; cursor: pointer; font-family: inherit; }
+  .qbtn:hover { background: #f3f4f6; }
+
+  #input-row { background: white; border-top: 1px solid #e5e5e5; padding: 12px 16px; display: flex; gap: 8px; flex-shrink: 0; }
+  #msg-input { flex: 1; padding: 9px 13px; border-radius: 8px; border: 1px solid #d1d5db; font-size: 13px; font-family: inherit; resize: none; min-height: 38px; max-height: 80px; outline: none; }
+  #msg-input:focus { border-color: #1a1a2e; }
+  #send-btn { padding: 9px 14px; border-radius: 8px; border: 1px solid #d1d5db; background: #1a1a2e; color: white; cursor: pointer; font-size: 13px; }
+  #send-btn:hover { background: #2d2d4a; }
+
+  .badge { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 10px; margin-left: 4px; font-weight: 500; }
+  .badge-red { background: #fee2e2; color: #991b1b; }
+  .badge-yellow { background: #fef9c3; color: #854d0e; }
+  .badge-gray { background: #f3f4f6; color: #6b7280; }
+  pre { white-space: pre-wrap; word-break: break-word; font-family: inherit; }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <div id="header-icon">🤖</div>
+  <div>
+    <h1>Agente SGI — Metalcris</h1>
+    <p>Trello + Google Drive + Claude</p>
+  </div>
+  <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+    <span id="last-update" style="font-size:11px;opacity:0.5"></span>
+    <button class="qbtn" style="background:rgba(255,255,255,0.1);color:white;border-color:rgba(255,255,255,0.2)" onclick="loadTrello()">↻ Actualizar</button>
+  </div>
+</div>
+
+<div id="status-bar">
+  <div class="pill"><div class="dot" id="dot-trello"></div><span id="lbl-trello">Trello: conectando...</span></div>
+  <div class="pill"><div class="dot ok"></div><span id="lbl-drive">Drive: listo</span></div>
+  <div class="pill">⚠ <span id="lbl-alerts">—</span></div>
+</div>
+
+<div id="alerts-panel">
+  <h3>🔴 Tarjetas que necesitan tu atención</h3>
+  <div id="alerts-list"></div>
+</div>
+
+<div id="messages"></div>
+
+<div id="quick-btns">
+  <button class="qbtn" onclick="sendQ('¿Qué tarjetas están demoradas y necesitan mi atención hoy?')">⚠ Demoradas</button>
+  <button class="qbtn" onclick="sendQ('Resumime el estado de todas las NC Mayor activas')">NC Mayor activas</button>
+  <button class="qbtn" onclick="sendQ('¿Qué tarjetas de HSMA están abiertas y cuánto llevan sin actualizar?')">HSMA pendientes</button>
+  <button class="qbtn" onclick="sendQ('¿Hay diferencias entre lo que dice Trello y lo que tiene la planilla de Drive?')">Trello vs Drive</button>
+  <button class="qbtn" onclick="sendQ('Dame un resumen ejecutivo del estado del SGC hoy')">Resumen ejecutivo</button>
+  <button class="qbtn" onclick="sendQ('¿Qué tarjetas No iniciado hay y desde hace cuánto?')">No iniciadas</button>
+</div>
+
+<div id="input-row">
+  <textarea id="msg-input" placeholder="Preguntame sobre NCs, OMs, sectores, Trello..." rows="1" onkeydown="handleKey(event)"></textarea>
+  <button id="send-btn" onclick="sendMessage()">➤</button>
+</div>
+
+<script>
+const BASE = window.location.origin;
+let trelloData = null;
+let history = [];
+let isLoading = false;
+
+const msgsEl = document.getElementById('messages');
+const inputEl = document.getElementById('msg-input');
+
+// Drive context (leído desde el servidor, hardcodeado por ahora con los datos reales)
+const DRIVE_CONTEXT = `PLANILLA SEGUIMIENTO METALCRIS — hoja "Seguimiento":
+Estados actuales según planilla:
+- En proceso demorado: Daño de motor Piletón P7 (desde 13/02), Material marcado/golpeado, Juan Perez accidente 14/04
+- En proceso: Cu-Ag mezclado con latón, Control de stock enfriadores, Fuga aceite hidráulico Prensa, Estandarización etiquetas, Bobinador P7, Emergencias Handy, Segregación residuos, Volcada HR1, Atrasos pedidos, Enzo Fernandez accidente, Rechazo laminadora, Desvíos solicitud cliente, Contenedores combustible, Carga planillas, Trazabilidad enfriadores, Norma 1014
+- No iniciado: Envío tochos latón Planta 1014, Caída tocho (mayo), Atrasos pedidos clientes (mayo)
+- Terminadas recientes: Andrés Avalos, Alejandro Romero, Devolución TAIT, Incumplimiento chatarra, Lingotes codificación, Emulsión oxidación, Brian Brown, etc.
+Próxima actualización planilla: 26/05/2026
+Fecha minuta seguimiento: 11/05/2026`;
+
+function addMsg(text, role) {
+  const d = document.createElement('div');
+  d.className = 'msg msg-' + role;
+  if (typeof text === 'string') {
+    d.innerHTML = text
+      .replace(/\n/g, '<br>')
+      .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+      .replace(/🔴/g, '<span style="color:#dc2626">🔴</span>')
+      .replace(/🟡/g, '<span style="color:#d97706">🟡</span>')
+      .replace(/🟢/g, '<span style="color:#16a34a">🟢</span>');
+  } else {
+    d.appendChild(text);
+  }
+  msgsEl.appendChild(d);
+  msgsEl.scrollTop = msgsEl.scrollHeight;
+  return d;
+}
+
+function setStatus(id, state, label) {
+  const dot = document.getElementById('dot-' + id);
+  dot.className = 'dot ' + state;
+  document.getElementById('lbl-' + id).textContent = label;
+}
+
+async function loadTrello() {
+  setStatus('trello', 'warn', 'Trello: cargando...');
+  try {
+    const r = await fetch(`${BASE}/api/trello/cards`);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    trelloData = data;
+
+    setStatus('trello', 'ok', `Trello: ${data.activas} activas`);
+    document.getElementById('lbl-alerts').textContent = `${data.demoradas} tarjetas requieren atención`;
+    document.getElementById('last-update').textContent = 'Actualizado ' + new Date().toLocaleTimeString('es-AR', {hour:'2-digit',minute:'2-digit'});
+
+    const panel = document.getElementById('alerts-panel');
+    const list = document.getElementById('alerts-list');
+
+    const demoradas = data.cards
+      .filter(c => !c.esCerrada && c.diasSinUpdate > 20)
+      .sort((a, b) => b.diasSinUpdate - a.diasSinUpdate)
+      .slice(0, 8);
+
+    if (demoradas.length > 0) {
+      panel.style.display = 'block';
+      list.innerHTML = demoradas.map(c =>
+        `<div class="alert-item ${c.diasSinUpdate > 30 ? 'red' : ''}">
+          <b>${c.diasSinUpdate}d</b> — ${c.nombre}
+          <span class="badge ${c.diasSinUpdate > 30 ? 'badge-red' : 'badge-yellow'}">${c.diasSinUpdate > 30 ? 'urgente' : 'atención'}</span>
+        </div>`
+      ).join('');
+    }
+
+    return data;
+  } catch (e) {
+    setStatus('trello', 'err', 'Trello: error — ' + e.message);
+    addMsg('No pude conectar con Trello: ' + e.message + '\n\nAsegurate de que el servidor esté corriendo correctamente.', 'agent');
+    return null;
+  }
+}
+
+async function sendMessage() {
+  const text = inputEl.value.trim();
+  if (!text || isLoading) return;
+  inputEl.value = '';
+  await sendQ(text);
+}
+
+async function sendQ(text) {
+  if (isLoading) return;
+  isLoading = true;
+
+  addMsg(text, 'user');
+  const loadingMsg = addMsg('Pensando...', 'agent');
+  loadingMsg.classList.add('loading');
+
+  history.push({ role: 'user', content: text });
+
+  try {
+    const trelloContext = trelloData ? trelloData.resumen : 'No cargado.';
+
+    const r = await fetch(`${BASE}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: history.slice(-12),
+        trelloContext,
+        driveContext: DRIVE_CONTEXT
+      })
+    });
+
+    const data = await r.json();
+    if (data.error) throw new Error(data.error);
+
+    history.push({ role: 'assistant', content: data.reply });
+    loadingMsg.innerHTML = data.reply
+      .replace(/\n/g, '<br>')
+      .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+    loadingMsg.classList.remove('loading');
+  } catch (e) {
+    loadingMsg.innerHTML = '❌ Error: ' + e.message;
+    loadingMsg.classList.remove('loading');
+    history.pop();
+  }
+
+  isLoading = false;
+}
+
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+}
+
+// Arranque
+(async () => {
+  const data = await loadTrello();
+  if (data) {
+    addMsg(`Todo cargado. Tengo **${data.activas} tarjetas activas** en Trello, de las cuales **${data.demoradas} necesitan atención** (más de 20 días sin actualizar).\n\n¿Querés el resumen de las más urgentes, o tenés alguna consulta específica?`, 'agent');
+  }
+})();
+</script>
+</body>
+</html>
