@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Agente SGI Metalcris
 
 Asistente de seguimiento de NCs y OMs. Conecta Trello + Google Drive + Claude.
@@ -45,6 +44,3 @@ npm install
 npm start
 # Abrir http://localhost:3000
 ```
-=======
-# Asistente-de-SGI
->>>>>>> 8fc930acfc2ec9833f53efe475c1e543ba9af8bd
